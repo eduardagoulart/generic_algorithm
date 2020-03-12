@@ -7,6 +7,7 @@ BITS = 6
 SIZE_OF_COMMUNITY = 30
 MIN_VALUE = -2
 MAX_VALUE = 2
+NUMBER_OF_PARENTS = 2
 
 
 def create_random_specimen():
@@ -25,10 +26,10 @@ def selection_method(df):
         counter = 0
         for gen in range(len(row)):
             counter += np.cos(2 * math.pi * row[gen])
-        print(len(row))
         return (
-            -20 * math.exp(-0.2 * math.sqrt(1 / len(row) * sum(np.power(row, 2))))
-            - math.exp(1 / len(row) * counter)
+            -20
+            * math.exp(-0.2 * math.sqrt(1 / float(len(row)) * sum(np.power(row, 2))))
+            - math.exp(1 / float(len(row)) * counter)
             + 20
             + math.exp(1)
         )
@@ -44,6 +45,13 @@ def selection_method(df):
     return df.merge(real_values, on="id", how="left")
 
 
+def tournament(df):
+    sample_parents = df.sample(2)
+    winner = sample_parents.nlargest(1, "fitness")
+    couples = df[df.id != int(winner.id)]
+    return winner, couples
+
+
 if __name__ == "__main__":
     community = {"id": [], "gen_0": [], "gen_1": []}
 
@@ -53,15 +61,27 @@ if __name__ == "__main__":
         community["gen_1"].append(create_random_specimen())
 
     df = pd.DataFrame(community)
-    df["real_value_gen_0"] = df.gen_0.apply(
-        lambda row: MIN_VALUE
-        + ((MAX_VALUE - MIN_VALUE) / (2 ** BITS - 1)) * convert_int_to_bin(row)
-    )
-    print(df)
-
-    df["real_value_gen_1"] = df.gen_1.apply(
-        lambda row: MIN_VALUE
-        + ((MAX_VALUE - MIN_VALUE) / (2 ** BITS - 1)) * convert_int_to_bin(row)
+    df["real_value_gen_0"] = df.apply(
+        lambda row: (
+            MIN_VALUE
+            + (float(MAX_VALUE - MIN_VALUE) / (2 ** BITS - 1))
+            * convert_int_to_bin(row.gen_0)
+        ),
+        axis=1,
     )
 
-    selection_method(df)
+    df["real_value_gen_1"] = df.apply(
+        lambda row: (
+            MIN_VALUE
+            + (float(MAX_VALUE - MIN_VALUE) / (2 ** BITS - 1))
+            * convert_int_to_bin(row.gen_1)
+        ),
+        axis=1,
+    )
+
+    df = selection_method(df)
+    couples = df.copy()
+    first_parent, couples = tournament(couples)
+    second_parent, couples = tournament(couples)
+
+    parents = first_parent.append(first_parent)
