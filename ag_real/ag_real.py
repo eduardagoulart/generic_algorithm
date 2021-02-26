@@ -1,4 +1,5 @@
 import argparse
+import ast
 import math
 import numpy as np
 import pandas as pd
@@ -93,26 +94,6 @@ def get_first_parents(parents):
     return parents_df.head(2)
 
 
-def get_parents_x_batter_than_y(parents):
-    """
-    The idea is select the parents to mutation.
-    This method will return two parents with parent X being
-    better than parent Y
-    Args:
-        parents: DataFrame
-
-    Returns:
-        DataFrame with only two rows
-    """
-
-    parents_df = pd.DataFrame.from_dict(map(dict, parents))
-    while True:
-        parent_x = parents_df.sample()
-        parent_y = parents_df.sample()
-        if parent_x.finalFitness < parent_x.finalFitness:
-            return parent_x, parent_y
-
-
 def genetic_operators_blx_alpha(real_representation, parent_x, parent_y):
     """
     This method calculates the random operator between a range
@@ -175,8 +156,13 @@ def cross_validation_blx_alpha(community, parents, gen):
 
 
 def cross_validation_blx_alpha_beta(community, parents, gen):
-    parent_x, parent_y = get_parents_x_batter_than_y(parents)
-
+    parents = get_first_parents(parents)
+    if float(parents["finalFitness"][0]) <= float(parents["finalFitness"][0]):
+        parent_x = parents["realRepresentation"][0]
+        parent_y = parents["realRepresentation"][1]
+    else:
+        parent_y = parents["realRepresentation"][0]
+        parent_x = parents["realRepresentation"][1]
     real_representation = list(np.array(parent_x) - np.array(parent_y))
     idx = max(community.id) + 1
 
@@ -191,7 +177,7 @@ def cross_validation_blx_alpha_beta(community, parents, gen):
         kids_info["generation"].append(gen)
         kids_info["fitness"].append(0)
         for i in range(DIMENSION):
-            if parent_x["realRepresentation"][i] <= parent_y["realRepresentation"][i]:
+            if parent_x[i] <= parent_y[i]:
                 kids_info["realRepresentation"].append(
                     random.uniform(
                         parent_x[i] - ALPHA * real_representation[i],
@@ -212,6 +198,29 @@ def cross_validation_blx_alpha_beta(community, parents, gen):
     kid_x = pd.DataFrame(_generate_kids_info(idx))
     kid_y = pd.DataFrame(_generate_kids_info(max(kid_x.id) + 1))
     return kid_x, kid_y
+
+
+def make_mutation(mutation_taxes, kid):
+    """
+    The mutation operation will be made by choosing one random index
+    in the children realRepresentation that should be changed
+    Args:
+        mutation_taxes: Float with the mutation probability
+        kid: DataFrame with one children information
+    Returns:
+        DataFrame with one children information
+    """
+    for i in range(DIMENSION):
+        mutation_probability = random.random()
+        if mutation_probability <= mutation_taxes:
+            mutation_index = random.randint(0, DIMENSION - 1)
+            list_real_representation = ast.literal_eval(
+                kid["realRepresentation"].to_list()[0]
+            )
+            list_real_representation[mutation_index] = random.random()
+            kid["realRepresentation"] = str(list_real_representation)
+            return kid
+    return kid
 
 
 def main():
@@ -242,10 +251,19 @@ def main():
         required=False,
         default=10,
     )
+    parser.add_argument(
+        "-mutation",
+        "--mutation",
+        nargs="+",
+        help="The mutation taxes (between 0 and 1 - percentage)",
+        required=False,
+        default=1,
+    )
 
     args = parser.parse_args()
     generation = args.sg
     population_size = args.pop
+    mutation_taxes = args.mutation
     community = create_random_comunity(population_size, generation)
     community["fitness"] = community[["realRepresentation", "fitness"]].apply(
         func_obj, axis=1
@@ -259,7 +277,11 @@ def main():
     for _ in range(1, args.ngen):
         random_parents = get_parents(community, population_size)
         cross_validation_blx_alpha(community, random_parents, population_size)
-        cross_validation_blx_alpha_beta(community, random_parents, population_size)
+        kid_x, kid_y = cross_validation_blx_alpha_beta(
+            community, random_parents, population_size
+        )
+        kid_x = make_mutation(mutation_taxes, kid_x)
+        kid_y = make_mutation(mutation_taxes, kid_y)
         generation += 1
         print(random_parents)
 
