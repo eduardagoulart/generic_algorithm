@@ -5,6 +5,8 @@ import pandas as pd
 import random
 
 DIMENSION = 6
+ALPHA = 0.75
+BETA = 0.25
 
 
 def func_obj(row):
@@ -52,6 +54,15 @@ def create_roulette(parents_data):
 
 
 def get_parents(community, population_size):
+    """
+    Args:
+        community: DataFrame with the information from the base community
+        population_size: Integer with the community size
+
+    Returns:
+        List of DataFrames with the better parents possible
+        (the same parent can show more than once in the list)
+    """
     community["finalFitness"] = create_roulette(community)
     choosen_parents = []
     roulette_sum = 0
@@ -64,6 +75,143 @@ def get_parents(community, population_size):
                 choosen_parents.append(subject)
                 break
     return choosen_parents
+
+
+def get_first_parents(parents):
+    """
+    The idea is select the parents to mutation.
+    This method will return the first two parents based on a random choice
+    and considering parent X and Y are not the same subject
+    Args:
+        parents: DataFrame
+
+    Returns:
+        DataFrame with only two rows
+    """
+    parents_df = pd.DataFrame.from_dict(map(dict, parents))
+    parents_df = parents_df.drop_duplicates(subset=["id"])
+    return parents_df.head(2)
+
+
+def get_parents_x_batter_than_y(parents):
+    """
+    The idea is select the parents to mutation.
+    This method will return two parents with parent X being
+    better than parent Y
+    Args:
+        parents: DataFrame
+
+    Returns:
+        DataFrame with only two rows
+    """
+
+    parents_df = pd.DataFrame.from_dict(map(dict, parents))
+    while True:
+        parent_x = parents_df.sample()
+        parent_y = parents_df.sample()
+        if parent_x.finalFitness < parent_x.finalFitness:
+            return parent_x, parent_y
+
+
+def genetic_operators_blx_alpha(real_representation, parent_x, parent_y):
+    """
+    This method calculates the random operator between a range
+    (min(float(parent_x[i]), float(parent_y[i])) - alpha * real_representation[i],
+    max(float(parent_x[i]), float(parent_y[i])) - alpha * real_representation[i])
+    Note that this only uses the alpha value to calculate
+    Args:
+        real_representation: List with the DIMENSION size
+        parent_x: pandas DataFrame with one row
+        parent_y: pandas DataFrame with one row
+
+    Returns:
+        Float value with the information to be added in the realRepresentation for
+        the children
+    """
+    min_value = min(
+        [
+            min(float(parent_x[i]), float(parent_y[i])) - ALPHA * real_representation[i]
+            for i in range(DIMENSION)
+        ]
+    )
+
+    max_value = max(
+        [
+            max(float(parent_x[i]), float(parent_y[i])) - ALPHA * real_representation[i]
+            for i in range(DIMENSION)
+        ]
+    )
+    return random.uniform(min_value, max_value)
+
+
+def cross_validation_blx_alpha(community, parents, gen):
+    parents = get_first_parents(parents)
+    parent_x = parents["realRepresentation"][0]
+    parent_y = parents["realRepresentation"][1]
+
+    real_representation = list(np.array(parent_x) - np.array(parent_y))
+    idx = max(community.id) + 1
+
+    def _generate_kids_info(idx):
+        kids_info = {
+            "id": [],
+            "generation": [],
+            "realRepresentation": [],
+            "fitness": [],
+        }
+        kids_info["id"].append(idx)
+        kids_info["generation"].append(gen)
+        kids_info["fitness"].append(0)
+        for i in range(DIMENSION):
+            kids_info["realRepresentation"].append(
+                genetic_operators_blx_alpha(real_representation, parent_x, parent_y)
+            )
+        kids_info["realRepresentation"] = str(kids_info["realRepresentation"])
+        return kids_info
+
+    kid_x = pd.DataFrame(_generate_kids_info(idx))
+    kid_y = pd.DataFrame(_generate_kids_info(max(kid_x.id) + 1))
+    return kid_x, kid_y
+
+
+def cross_validation_blx_alpha_beta(community, parents, gen):
+    parent_x, parent_y = get_parents_x_batter_than_y(parents)
+
+    real_representation = list(np.array(parent_x) - np.array(parent_y))
+    idx = max(community.id) + 1
+
+    def _generate_kids_info(idx):
+        kids_info = {
+            "id": [],
+            "generation": [],
+            "realRepresentation": [],
+            "fitness": [],
+        }
+        kids_info["id"].append(idx)
+        kids_info["generation"].append(gen)
+        kids_info["fitness"].append(0)
+        for i in range(DIMENSION):
+            if parent_x["realRepresentation"][i] <= parent_y["realRepresentation"][i]:
+                kids_info["realRepresentation"].append(
+                    random.uniform(
+                        parent_x[i] - ALPHA * real_representation[i],
+                        parent_y[i] + BETA * real_representation[i],
+                    )
+                )
+            else:
+                kids_info["realRepresentation"].append(
+                    random.uniform(
+                        parent_y[i] - BETA * real_representation[i],
+                        parent_x[i] + ALPHA * real_representation[i],
+                    )
+                )
+
+        kids_info["realRepresentation"] = str(kids_info["realRepresentation"])
+        return kids_info
+
+    kid_x = pd.DataFrame(_generate_kids_info(idx))
+    kid_y = pd.DataFrame(_generate_kids_info(max(kid_x.id) + 1))
+    return kid_x, kid_y
 
 
 def main():
@@ -102,16 +250,18 @@ def main():
     community["fitness"] = community[["realRepresentation", "fitness"]].apply(
         func_obj, axis=1
     )
-    # import pudb
-    # pudb.set_trace()
+
     best_fitness = [min(community["fitness"])]
     avg_fitness = [community["fitness"].to_list()]
     gen_fitness = []
     generation += 1
-    # import pudb
-    # pudb.set_trace()
+
     for _ in range(1, args.ngen):
         random_parents = get_parents(community, population_size)
+        cross_validation_blx_alpha(community, random_parents, population_size)
+        cross_validation_blx_alpha_beta(community, random_parents, population_size)
+        generation += 1
+        print(random_parents)
 
 
 if __name__ == "__main__":
